@@ -501,15 +501,38 @@ Again, these totals differ somewhat from the numbers in the charts in the next s
 <br>
 
 ```{r}
-dc_final_trends %>%
-  select(-starts_with("pct_"), -change_pct_2000_2020) %>%
-  rename(  `Age group` = age_group
-         , `2000 population` = pop_2000
-         , `2010 population` = pop_2010
-         , `2020 population` = pop_2020
-         , `'00 - '20 change` = raw_change
-         ) %>%
-  knitr::kable(digits = 0, format.args = list(big.mark = ","))
+# dc_final_trends %>%
+#   select(-starts_with("pct_"), -change_pct_2000_2020) %>%
+#   rename(  `Age group` = age_group
+#          , `2000 population` = pop_2000
+#          , `2010 population` = pop_2010
+#          , `2020 population` = pop_2020
+#          , `'00 - '20 change` = raw_change
+#          ) %>%
+#   knitr::kable(digits = 0, format.args = list(big.mark = ","))
+make_change_table <- function() {
+  apl <- read_csv("data/netmigration_1793987461637/netmigration_1793987461637.csv", 
+                  show_col_types = F)
+  dc  <- apl[apl$fips == 11001, ]
+  
+  # End-of-decade population = expected (e) + net migrants (m), ages 0-4, 5-9, 10-14
+  # Decade codes: 9 = 1990s (ends 2000), 0 = 2000s (ends 2010), 1 = 2010s (ends 2020)
+  pop <- function(d) sapply(c(0, 5, 10), \(a) dc[[paste0("e", d, "ttt", a)]] + dc[[paste0("m", d, "ttt", a)]])
+  
+  tab <- data.frame(age = c("0–4", "5–9", "10–14"), 
+                    y2000 = pop(9), 
+                    y2010 = pop(0), 
+                    y2020 = pop(1))
+  tab <- rbind(tab, data.frame(age = "Total, 0–14", t(colSums(tab[-1]))))
+  tab$change <- tab$y2020 - tab$y2000
+  
+  names(tab) <- c("Age group", "2000 population", "2010 population", "2020 population", "'00 - '20 change")
+  
+  tab
+}
+
+
+knitr::kable(make_change_table(), digits = 0, format.args = list(big.mark = ","))
 ```
  
  <br><br>
@@ -669,7 +692,7 @@ ggplot(fert %>% filter(city=="Washington")
 Part of the 2010s increase in births during the 2010s can be traced to a specific driver: net in-migration of people in their 30s increased significantly in DC during the decade. There were more people living in DC at the age when many people start families. The line chart in the net-migration section below shows how net migration changed across all age groups over the decades in DC. Note the upward jumps in the 25-39 groups. 
 
 
-There was also a significant drop in infant mortality in DC between the 2000s and 2020. According to the DC Department of Health, there were roughly 8 deaths per 1,000 live births in DC in the early 2010s; this fell to 5.5 deaths per 1,000 live births in the 2019-2023 period.^[Mayor Vincent C. Gray and DC Department of Health announce historic decrease in district’s infant mortality rate. (2016). DC.Gov. https://dchealth.dc.gov/es/release/mayor-vincent-c-gray-and-dc-department-health-announce-historic-decrease-district%E2%80%99s-infant-0] ^[DC health highlights progress in maternal and infant health in perinatal health report | doh. (2016). DC.Gov. https://dchealth.dc.gov/release/dc-health-highlights-progress-maternal-and-infant-health-perinatal-health-report] 
+There was also a significant drop in infant mortality in DC between the 2000s and 2020. According to the DC Department of Health, there were roughly 8 deaths per 1,000 live births in DC in the early 2010s; this fell to 5.5 deaths per 1,000 live births in the 2019-2023 period.^[Mayor Vincent C. Gray and DC Department of Health announce historic decrease in district’s infant mortality rate. DC.Gov. https://dchealth.dc.gov/es/release/mayor-vincent-c-gray-and-dc-department-health-announce-historic-decrease-district%E2%80%99s-infant-0] ^[DC health highlights progress in maternal and infant health in perinatal health report | doh. DC.Gov. https://dchealth.dc.gov/release/dc-health-highlights-progress-maternal-and-infant-health-perinatal-health-report] 
 While this is a huge improvement (and literally a matter of life and death!) it accounts for a relatively small share of DC's total population increase during the 2010s. 
 A drop in infant mortality of 2.5 deaths per 1,000 live births represents roughly `r fmt(to_plot20$value[to_plot20$name=="births"]/1000 * 2.5)` additional births, using the 2010s-era `r fmt(to_plot20$value[to_plot20$name=="births"])` births as a baseline. That's about 
 `r round(to_plot20$value[to_plot20$name=="births"]/1000 * 2.5 / to_plot20$value[to_plot20$name=="births"] * 100, 2)`% of all births during that period.
@@ -955,22 +978,25 @@ race_df <- dc_race_c %>%
 # race_df |> filter(race == "All")     # 114,992 / 100,815 / ~114,400
 # race_df |> filter(race == "Other")   # ~3,600 / ~4,300 / larger in 2020, but positive
 
+library(viridis)
+my_colors <- viridis(5)
+
 plt <-
   ggplot(race_df %>%
            group_by(year, race) %>%
            summarise(children = sum(children), .groups  = 'drop')
          , aes(x=year, y=children, color=factor(race))
          ) +
-  geom_line(linewidth=ms) +
+  geom_line(linewidth=ms+1) +
   scale_y_continuous(
       labels = scales::label_comma()
     ) +
   scale_color_manual(values = c(
-              "All"=total_col
-            , "Black"=black_col
-            , "Hispanic"=hispa_col
-            , "Other"=other_col
-            , "White (NH)"=white_col
+              "All"     =my_colors[1]                 #total_col
+            , "Black"   =my_colors[2]                 #black_col
+            , "Hispanic"=my_colors[3]                 #hispa_col
+            , "Other"   =my_colors[4]                 #other_col
+            , "White (NH)"=my_colors[5]               #white_col
             )) +
   labs(x="", y="Number of children", color="",
       caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n'Other' includes Asian, multiracial, and other groups; its 2020 increase partly reflects the census race question redesign.\nSource: U.S. Census Bureau, Decennial Census.",
@@ -1028,9 +1054,9 @@ a <-
   ggplot(aes(x=race_hh, y=any_child_u6, fill=race_hh, group=factor(year))) +
   geom_bar(stat="identity", position="dodge") +
   scale_fill_manual(values = c(
-              "Black alone"=black_col
-            , "Hisp. or Latino"=hispa_col
-            , "White alone (NH)"=white_col
+              "Black alone"     =my_colors[2] #black_col
+            , "Hisp. or Latino" =my_colors[3] #hispa_col
+            , "White alone (NH)"=my_colors[5] #white_col
             )) +
   scale_y_continuous(labels = scales::label_comma()) +
   labs(x="", y="", 
@@ -1050,9 +1076,9 @@ b <-
   ggplot(aes(x=race_hh, y=any_child_6_17, fill=race_hh, group=factor(year))) +
   geom_bar(stat="identity", position="dodge") +
   scale_fill_manual(values = c(
-              "Black alone"=black_col
-            , "Hisp. or Latino"=hispa_col
-            , "White alone (NH)"=white_col
+              "Black alone"     =my_colors[2] #black_col
+            , "Hisp. or Latino" =my_colors[3] #hispa_col
+            , "White alone (NH)"=my_colors[5] #white_col
             )) +
   scale_y_continuous(labels = scales::label_comma()) +
   labs(x="", y=""
@@ -1159,7 +1185,7 @@ a <- ggplot(results %>% filter(inc_grp=="200%+")
                   ymax = (share + 1.96 * share_se) * 100), width = .15) +
   geom_text(aes(y = (share + 1.96 * share_se) * 100, label=paste0(round(share*100), "%")), vjust = -0.5) +
   labs(x="", y="% of children in families above 200% AMI",
-       caption="Source: 2007 and 2024 5-year American Community Survey.") +
+       caption="Source: 2007 and 2024 1-year American Community Survey.") +
   lims(y=c(0, 25)) +
   ggtitle(paste0("Share of children in families above 200% AMI\nrose from ",
                  round(100 * s[1]), "% to ", round(100 * s[2]), "%")) +
