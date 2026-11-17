@@ -133,7 +133,16 @@ If we look farther back in time, we can see that DC's youth population used to b
 <br>
 
 ```{r, fig.width=9}
-df <- read_excel("data/OP_pop_data.xlsx")
+df <- read_excel("data/OP_pop_data.xlsx") #|>
+  # https://datacenter.aecf.org/data/tables/101-child-population-by-age-group?loc=10&loct=3#detailed/3/any/false/575,133/62,63,64,6,4693/419,420
+  # bind_rows(tibble(
+  #   year = 2010,
+  #   total_pop = 605282,
+  #   u15_pop   = 84372,
+  #   u15_pct   = 84372 / 605282
+  # )) |>
+  # arrange(year)
+  # 
 
 a <- 
   ggplot(df, aes(x=year, y=u15_pop)) +
@@ -238,7 +247,7 @@ same_as_city <- c(
 xwalk <- xwalk %>% filter(GEOID %in% same_as_city)
 
 pull_youth_data <- function(year) {
-  cells <- c(3:6, 27:30)   # P012: male/female under 5, 5-9, 10-14, 15-17
+  cells <- c(3:5, 27:29)   # P012: male/female under 5, 5-9, 10-14
   vars  <- c(total = "P012001",
              setNames(sprintf("P012%03d", cells), paste0("c", cells)))
 
@@ -389,7 +398,7 @@ The totals below are decennial census counts, so they differ from the KidsCount 
 ```{r, fig.height=6}
 
 pull_youth_dhc_2020 <- function() {
-  cells <- c(3:6, 27:30)   # P12: male/female under 5, 5-9, 10-14, 15-17
+  cells <- c(3:5, 27:29)   # P12: male/female under 5, 5-9, 10-14
   vars  <- c(total = "P12_001N",
              setNames(sprintf("P12_%03dN", cells), paste0("c", cells)))
 
@@ -1278,7 +1287,7 @@ estimate_year <- function(yr) {
     to_survey(type = "person", design = "rep_weights")
 
   svy %>%
-    filter(AGEP < 18, !is.na(hincp)) %>%
+    filter(AGEP < 15, !is.na(hincp)) %>%
     group_by(inc_grp) %>%
     summarise(
       children = survey_total(vartype = "se"),
