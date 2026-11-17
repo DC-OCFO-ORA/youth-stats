@@ -61,20 +61,41 @@ The chart below shows DC's youth population between 1990 and 2025. After falling
 
 <br>
 
-```{r}
-cpop <- read_excel("data/Child population by gender.xlsx") %>%
-  filter(Gender == "Total less than 18", DataFormat=="Number") %>%
-  mutate(count = as.numeric(Data), year=as.numeric(TimeFrame))
+```{r, fig.width=10}
+# This data comes from here: 
+# https://datacenter.aecf.org/data/tables/101-child-population-by-age-group?loc=10&loct=3#detailed/3/any/false/575/62,63,64/419,420
+cpop <- read_excel("data/Child population by age group.xlsx") %>%
+  filter(
+    DataFormat=="Number",
+    `Age group` %in% c("0 to 4", "5 to 11", "12 to 14")
+         ) %>%
+  mutate(Data = as.numeric(Data)) %>%
+  group_by(Location, TimeFrame) %>%
+  summarize(count = sum(Data, na.rm=T)) %>%
+  ungroup() %>%
+  rename(year = TimeFrame) %>% mutate(year = as.numeric(year))
 
-a <- ggplot(cpop, aes(x=year, y=as.numeric(count))) +
-  geom_line(linewidth = ms) +
+cpop_u18 <- read_excel("data/Child population by age group.xlsx") %>%
+  filter(
+    DataFormat=="Number",
+    `Age group` == "Total less than 18"
+         ) %>%
+  mutate(Data = as.numeric(Data)) %>%
+  group_by(Location, TimeFrame) %>%
+  summarize(count_u18 = sum(Data, na.rm=T)) %>%
+  ungroup() %>%
+  rename(year = TimeFrame) %>% mutate(year = as.numeric(year))
+
+a <- ggplot(inner_join(cpop, cpop_u18, by="year")) +
+  geom_line(aes(x=year, y=count), linewidth = ms) +
+  geom_line(aes(x=year, y=count_u18), linewidth = ms, linetype=2) +
    scale_y_continuous(
       labels = scales::label_comma()
-    , limits = c(0, 140e3)
+    , limits = c(0, 130e3)
     ) +
   labs(x="", y="Number of Children", 
        caption="Source: KidsCount / The Annie E. Casey Foundation, U.S. Census Bureau",
-       title = "Under 18 population"
+       title = "Under 15 population (solid line), & under 18 (dashed)"
          ) +
   theme(
      plot.caption = element_text(hjust = 0)
@@ -99,7 +120,9 @@ b <- ggplot(tpop, aes(x=year, y=as.numeric(count))) +
     # , panel.grid = element_blank()
     )
 
-a + b
+a + b 
+# + 
+#   plot_annotation(title="Graph 1: Child and total population counts between 1990 and 2025")
 ```
 
 <br>
@@ -109,7 +132,7 @@ If we look farther back in time, we can see that DC's youth population used to b
 
 <br>
 
-```{r}
+```{r, fig.width=9}
 df <- read_excel("data/OP_pop_data.xlsx")
 
 a <- 
@@ -122,7 +145,8 @@ a <-
      plot.caption = element_text(hjust = 0)
     # , panel.grid = element_blank()
     ) +
-  labs(x="", y="Under 15 population")
+  labs(x="", y="Under 15 population",
+       title="Under 15 population")
 
 b <- 
   ggplot(df, aes(x=year, y=u15_pct)) +
@@ -134,10 +158,11 @@ b <-
      plot.caption = element_text(hjust = 0)
     # , panel.grid = element_blank()
     ) +
-  labs(x="", y="Under 15 population, as % of total pop.")
+  labs(x="", y="Under 15 population, as % of total pop.",
+       title="Under 15 population, as % of total population")
 
 a + b + plot_annotation(
-  title = "DC's youth population used to be much higher",
+  # title = "DC's youth population used to be much higher",
   caption = 'Source: DC Office of Planning, U.S. Census Bureau, KidsCount / The Annie E. Casey Foundation',
   theme = theme(plot.caption = element_text(hjust = 0))
   )
@@ -190,7 +215,27 @@ xwalk <- tibble::tribble(
                                GEOID = paste0(state_code, county_code))),
             by = c("state", "county"))
 
+xwalk <- bind_rows(xwalk, tibble::tribble(
+  ~city, ~state, ~county, ~GEOID,
+  "Virginia Beach", "VA",  "Virginia Beach city", "51810"
+))
+
 stopifnot(!any(is.na(xwalk$GEOID)))   # catches any name I got wrong
+
+same_as_city <- c(
+  "36005", "36047", "36061", "36081", "36085",  # New York City (all 5 boroughs)
+  "42101",  # Philadelphia
+  "06075",  # San Francisco
+  "08031",  # Denver
+  "24510",  # Baltimore city
+  "11001",  # District of Columbia
+  "47037",  # Nashville (Davidson, ~96%)
+  "12031",  # Jacksonville (Duval, ~95%)
+  "18097",  # Indianapolis (Marion, ~91%)
+  "51810"   # Virginia Beach city
+)
+
+xwalk <- xwalk %>% filter(GEOID %in% same_as_city)
 
 pull_youth_data <- function(year) {
   cells <- c(3:6, 27:30)   # P012: male/female under 5, 5-9, 10-14, 15-17
@@ -277,30 +322,57 @@ dc_pop <- out_c |> filter(race == "Total, all races", year == 2020, GEOID == "11
 
 <br>
 
-Relative to other U.S. urban counties, DC has relatively few children as a share of its population.
+Relative to other U.S. urban counties, DC has relatively few children as a share of its population. 
+The broader MSA has a greater share of children.
 
 <br>
 
-```{r}
-out_c %>% filter(race == "Total, all races", year==2020) %>%
-  group_by(city) %>%
-  summarise(
-      children=sum(children, na.rm=T)
-    , population=sum(population, na.rm=T)
-    , share_children = children / population
-    , .groups='drop') %>%
-  mutate(DC = if_else(city == "Washington", 1, 0)) %>%
-  ggplot(aes(y=forcats::fct_reorder(city, share_children), x=share_children, fill=factor(DC))) +
-  geom_bar(stat="identity") +
-  labs(x="Children as share of population", y="") + 
-  guides(fill="none") +
-  scale_x_continuous(labels = scales::label_percent()) + 
+```{r, fig.width=9, fig.height=7}
+# Under 15. For under 18, add "B01001_006", "B01001_030" (male/female 15-17).
+kid_vars <- c("B01001_003", "B01001_004", "B01001_005",   # male: <5, 5-9, 10-14
+              "B01001_027", "B01001_028", "B01001_029")   # female: <5, 5-9, 10-14
+
+acs_kids <- function(geography, ...) {
+  get_acs(geography, variables = c("B01001_001", kid_vars), year = 2024,
+          survey = "acs5", key = CENSUS_KEY, ...) |>
+    group_by(GEOID, NAME) |>
+    summarise(total = estimate[variable == "B01001_001"],
+              kids  = sum(estimate[variable %in% kid_vars]), .groups = "drop")
+}
+
+cty <- acs_kids("county", state = unique(xwalk$state)) |>
+  inner_join(xwalk, by = "GEOID") |>
+  group_by(label = city) |>                       # combines NYC's 5 boroughs
+  summarise(share = sum(kids) / sum(total), .groups = "drop") |>
+  mutate(is_dc = label == "Washington")
+
+msa <- acs_kids("cbsa") |>
+  filter(grepl("Metro Area", NAME)) |>
+  slice_max(total, n = 30) |>
+  mutate(share = kids / total,
+         label = sub("[-,].*", "", NAME),
+         is_dc = grepl("^Washington", NAME))
+
+xmax <- max(cty$share, msa$share)                 # same x-axis on both panels
+
+kid_bars <- function(df, subtitle) {
+  ggplot(df, aes(share, reorder(label, share), fill = is_dc)) +
+    geom_col() +
+    scale_x_continuous(labels = scales::percent, limits = c(0, xmax)) +
+    scale_fill_manual(values = c("grey60", "#2a9d8f"), guide = "none") +
+    labs(x = "% of population under 15", y = NULL, subtitle = subtitle) +
+    theme_minimal() +
+    theme(panel.grid.major.y = element_blank(), panel.grid.minor = element_blank())
+}
+
+kid_bars(cty, "In the 10 biggest city-county equivalents") +
+  kid_bars(msa, "In the 30 largest metro areas") +
   plot_annotation(
-  title = "Compared to large-city counties, DC has relatively few children",
-  caption = 'Chart shows county-level data for large U.S. cities in 2020, using Census Bureau Population Estimates.\nSource: Census Bureau Population Estimates (July 1, 2020).',
-  theme = theme(plot.caption = element_text(hjust = 0))
-  )
+    # title   = "Residents under 15 as a share of total population",
+    caption = "Source: 2020-2024 American Community Survey 5-year estimates, table B01001.",
+    theme   = theme(plot.caption = element_text(hjust = 0)))
 ```
+
 
 <br>
 
@@ -627,8 +699,9 @@ a <- waterfalls::waterfall(values = round(to_plot20$value)
                       , labels = c("Births", "Aged out", "Net migration")
                       , calc_total = T) +
   labs(x="", y="Number of children", 
-       caption="Source: U.S. Census Bureau, University of Wisconsin Applied Population Laboratory",
-       title = "Despite net negative migration,\nDC's youth population grew between 2010 & 2020") +
+         caption="Source: U.S. Census Bureau, University of Wisconsin Applied Population Laboratory"
+       # , title = "Despite net negative migration,\nDC's youth population grew between 2010 & 2020"
+  ) +
   theme_minimal() +
   theme(plot.caption = element_text(hjust = 0)) +
   scale_y_continuous(labels = scales::label_comma(accuracy = 1)) 
@@ -678,8 +751,8 @@ ggplot(fert %>% filter(city=="Washington")
        , aes(x=year, y=births)) +
   geom_line(linewidth=ms) +
   labs(x="", y="Births in DC", 
-       title=paste0("DC Births rose during 2010s; ", ifelse(pct_change >= 0, "up ", "down "),
-                    abs(round(pct_change * 100)), "% since 2000"),
+       # title=paste0("DC Births rose during 2010s; ", ifelse(pct_change >= 0, "up ", "down "),
+       #              abs(round(pct_change * 100)), "% since 2000"),
        caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
        ) +
   theme_minimal() +
@@ -708,7 +781,7 @@ ggplot(fert %>% filter(city=="Washington")
   geom_line(linewidth=ms) +
   scale_y_continuous(limits = c(0, 75)) +
   labs(x="", y="General Fertility Rate", 
-       title="DC's General Fertility Rate has fallen over time"
+       # title="DC's General Fertility Rate has fallen over time"
        , caption="Source: National Center for Family & Marriage Research, Bowling Green State University"
        ) +
   theme_minimal() +
@@ -732,11 +805,17 @@ fert %>% filter(year==2024) %>%
   mutate(DC = if_else(city == "Washington", 1, 0)) %>%
   ggplot(aes(y=forcats::fct_reorder(city, gfr), x=gfr*1000, fill=factor(DC))) +
   geom_bar(stat="identity") +
-  labs(x="GFR in 2024 (births/1000 women 15-44)", y="",
-       title="DC's GFR is lower than in many urban counties") + 
+  scale_fill_manual(values = c("grey60", "#2a9d8f"), guide = "none") +
+  labs(x="GFR in 2024 (births/1000 women 15-44)", y=""
+       # , title="DC's GFR is lower than in many urban counties"
+       ) + 
   guides(fill="none") +
   theme_minimal() +
-  theme(plot.caption = element_text(hjust = 0)) 
+  theme(
+      plot.caption = element_text(hjust = 0)
+    , panel.grid.minor.x = element_blank()
+    , panel.grid.major.y = element_blank()
+    ) 
 ```
 
 
@@ -761,11 +840,48 @@ dc_rates <- bind_rows(lapply(names(periods), function(p) {
 ggplot(dc_rates, aes(age, rate, colour = decade, group = decade)) +
   geom_hline(yintercept = 0, colour = "grey60") +
   geom_line(linewidth = 1) + geom_point() +
-  labs(title = "DC net migration rate by age",
-       subtitle = "Ages 15-19 reflect college in-migration, not families",
+  labs(
+    # title = "DC net migration rate by age",
+       subtitle = "Ages 15-19 reflect college in-migration, not just family migration",
        x = "Age at end of decade", y = "Net migrants per 100 expected") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
+```
+
+Among 23-29 year olds in the 2013-2017 5-year ACS who moved to DC from elsewhere,
+how many are working vs in school?
+
+
+```{r}
+pums <- get_pums(variables = c("AGEP", "MIG", "MIGSP", "ESR", "SCH"),
+                 state = "DC", survey = "acs5", year = 2017,
+                 rep_weights = "person", key = CENSUS_KEY)
+
+movers <- pums |>
+  filter(between(AGEP, 23, 29), MIG %in% c("2", "3")) |>     # 2 = abroad, 3 = different US house
+  mutate(
+    moved_from = case_when(MIG == "2"                          ~ "Abroad",
+                           MIGSP %in% c(ST, paste0("0", ST))  ~ "Same state",   # MIGSP may be zero-padded
+                           TRUE                                ~ "Another state"),
+    working   = ESR %in% c("1", "2", "4", "5"),                # civilian or military, employed
+    in_school = SCH %in% c("2", "3"),                          # attended public/private school, past 3 months
+    status = case_when(working & in_school ~ "Working and in school",
+                       working             ~ "Working only",
+                       in_school           ~ "In school only",
+                       TRUE                ~ "Neither")) |>
+  to_survey(type = "person", design = "rep_weights")
+
+# All movers
+movers |>
+  filter(moved_from != "Same state") |>
+  group_by(status) |>
+  summarise(people = survey_total(vartype = "ci"), share = survey_prop(vartype = "ci"))
+
+# By where they moved from
+movers |>
+  group_by(moved_from, status) |>
+  summarise(people = survey_total(vartype = "ci"), share = survey_prop(vartype = "ci"))
+
 ```
 
 
@@ -792,7 +908,8 @@ tab %>%
   geom_col(position = "dodge") +
   geom_hline(yintercept = 0) +
   scale_y_continuous(labels = scales::comma) +
-  labs(title = "DC child population change, ages 0-14",
+  labs(
+    # title = "DC child population change, ages 0-14",
        x = NULL, y = "Children") +
   theme_minimal()
 
@@ -937,7 +1054,7 @@ These trends also appear in school enrollment data; see appendix.
 ```{r}
 
 pull_dc_race_dhc_2020 <- function() {
-  cells <- c(3:6, 27:30)   # P12: male/female under 5, 5-9, 10-14, 15-17
+  cells <- c(3:5, 27:29)   # P12: male/female under 5, 5-9, 10-14
   iters <- c(B = "Black alone",
              H = "Hispanic or Latino",
              I = "White alone, not Hispanic")
@@ -999,8 +1116,8 @@ plt <-
             , "White (NH)"=my_colors[5]               #white_col
             )) +
   labs(x="", y="Number of children", color="",
-      caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n'Other' includes Asian, multiracial, and other groups; its 2020 increase partly reflects the census race question redesign.\nSource: U.S. Census Bureau, Decennial Census.",
-       title = "Children in DC by race: fewer Black children, other groups saw increase"
+       # title = "Children in DC by race: fewer Black children, other groups saw increase",
+      caption = "White is non-Hispanic. Black alone includes a small number of Hispanic Black children.\n'Other' includes Asian, multiracial, and other groups; its 2020 increase partly reflects the census race question redesign.\nSource: U.S. Census Bureau, Decennial Census."
          ) +
   theme(
      plot.caption = element_text(hjust = 0)
@@ -1092,7 +1209,7 @@ b <-
   guides(fill="none")
 
 a + b + plot_annotation(
-  title = 'Fewer Black families, more White families with young children',
+  # title = 'Fewer Black families, more White families with young children',
   subtitle = 'Number of families with children in the 2000, 2010, and 2020 Censuses')
 ```
 
@@ -1183,12 +1300,13 @@ a <- ggplot(results %>% filter(inc_grp=="200%+")
   geom_bar(stat="identity", position='dodge', fill="steelblue") +
   geom_errorbar(aes(ymin = (share - 1.96 * share_se) * 100,
                   ymax = (share + 1.96 * share_se) * 100), width = .15) +
-  geom_text(aes(y = (share + 1.96 * share_se) * 100, label=paste0(round(share*100), "%")), vjust = -0.5) +
+  # geom_text(aes(y = (share + 1.96 * share_se) * 100, label=paste0(round(share*100), "%")), vjust = -0.5) +
   labs(x="", y="% of children in families above 200% AMI",
        caption="Source: 2007 and 2024 1-year American Community Survey.") +
   lims(y=c(0, 25)) +
-  ggtitle(paste0("Share of children in families above 200% AMI\nrose from ",
-                 round(100 * s[1]), "% to ", round(100 * s[2]), "%")) +
+  theme_minimal() +
+  # ggtitle(paste0("Share of children in families above 200% AMI\nrose from ",
+  #                round(100 * s[1]), "% to ", round(100 * s[2]), "%")) +
   theme(
       plot.caption = element_text(hjust = 0)
     , panel.grid = element_blank()
